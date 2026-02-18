@@ -152,10 +152,11 @@ function setCameraPreset(preset) {
         top: { pos: [0, 6, 0.01], target: [0, 0, 0] },
         front: { pos: [0, 1.5, 5], target: [0, 0.8, 0] },
         side: { pos: [5, 1.5, 0], target: [0, 0.8, 0] },
-        a0: { pos: [-0.6 + 1.5, 2, 0.7 + 1.5], target: [-0.6, 1, 0.7] },
-        a1: { pos: [0.5 + 1.5, 2, 0.7 + 1.5], target: [0.5, 1, 0.7] },
-        a2: { pos: [-0.6 + 1.5, 2, -0.7 - 1.5], target: [-0.6, 1, -0.7] },
-        a3: { pos: [0.5 + 1.5, 2, -0.7 - 1.5], target: [0.5, 1, -0.7] },
+        // Close-up on each pallet
+        p0: { pos: [-0.6, 1.5, 2.5], target: [-0.6, 0.3, 1.4] },  // Front-left pallet
+        p1: { pos: [0.5, 1.5, 2.5], target: [0.5, 0.3, 1.4] },    // Front-right pallet
+        p2: { pos: [-0.6, 1.5, -2.5], target: [-0.6, 0.3, -1.4] }, // Back-left pallet
+        p3: { pos: [0.5, 1.5, -2.5], target: [0.5, 0.3, -1.4] },   // Back-right pallet
     };
     
     const p = presets[preset];
