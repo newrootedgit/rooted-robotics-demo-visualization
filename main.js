@@ -522,49 +522,65 @@ function lerpV3(a, b, t, out) {
 }
 
 function solveIK(arm, targetWorld) {
-    // Simplified IK for overhead-mounted 6DOF arm
-    // Target is in world coords, need joint angles to reach it
+    // IK for overhead-mounted UR7e arm
+    // Target is where we want the suction cup tip to be (world coords)
     
     const cfg = arm.config;
-    const basePos = new THREE.Vector3(cfg.x, 1.2, cfg.z); // Arm base position
+    const mountHeight = 1.2;
+    const basePos = new THREE.Vector3(cfg.x, mountHeight, cfg.z);
+    
+    // Tool offset from wrist to suction cup tip (along arm Z when straight)
+    // d4 + d5 + d6 + gripper + suction = 0.1333 + 0.0997 + 0.0996 + 0.02 + 0.035 ≈ 0.39m
+    const TOOL_LENGTH = 0.15; // Simplified: wrist to suction tip
     
     // Convert target to arm-local coords
     const local = targetWorld.clone().sub(basePos);
     
-    // Calculate angles (simplified geometric IK)
-    const reach = Math.sqrt(local.x * local.x + local.z * local.z);
-    const depth = -local.y; // How far down to reach
-    
-    // J1: Rotation to face target
+    // J1: Base rotation to face target
     const j1 = Math.atan2(local.x, -local.z);
     
-    // Arm geometry for J2, J3
-    const L1 = UR.a2;  // Upper arm
-    const L2 = UR.a3;  // Forearm
-    const d = Math.sqrt(reach * reach + depth * depth);
+    // Horizontal reach and vertical depth (in arm's rotated frame)
+    const horizReach = Math.sqrt(local.x * local.x + local.z * local.z);
+    const vertDrop = -local.y - UR.d1; // From shoulder joint down
     
-    // Clamp to reachable
-    const maxReach = L1 + L2 - 0.05;
-    const clampedD = Math.min(d, maxReach);
+    // Account for tool length - wrist needs to be TOOL_LENGTH above target
+    // Since we want gripper pointing down, subtract tool length from reach distance
+    const wristHorizReach = horizReach;
+    const wristVertDrop = vertDrop - TOOL_LENGTH;
+    
+    // Arm link lengths
+    const L1 = UR.a2;  // Upper arm: 0.425m
+    const L2 = UR.a3;  // Forearm: 0.3922m
+    
+    // Distance from shoulder to wrist target
+    const D = Math.sqrt(wristHorizReach * wristHorizReach + wristVertDrop * wristVertDrop);
+    
+    // Clamp to reachable workspace
+    const maxReach = L1 + L2 - 0.02;
+    const minReach = Math.abs(L1 - L2) + 0.02;
+    const clampedD = Math.max(minReach, Math.min(D, maxReach));
     
     // Law of cosines for elbow angle
     let cosElbow = (L1*L1 + L2*L2 - clampedD*clampedD) / (2 * L1 * L2);
     cosElbow = Math.max(-1, Math.min(1, cosElbow));
     const elbowAngle = Math.acos(cosElbow);
     
-    // Shoulder angle
+    // Shoulder angle components
     let cosShoulder = (L1*L1 + clampedD*clampedD - L2*L2) / (2 * L1 * clampedD);
     cosShoulder = Math.max(-1, Math.min(1, cosShoulder));
     const shoulderOffset = Math.acos(cosShoulder);
-    const reachAngle = Math.atan2(depth, reach);
+    const reachAngle = Math.atan2(wristVertDrop, wristHorizReach);
     
+    // Joint 2 (shoulder lift) - positive rotates arm forward/down
     const j2 = reachAngle + shoulderOffset;
+    
+    // Joint 3 (elbow) - negative bends elbow down
     const j3 = -(Math.PI - elbowAngle);
     
-    // Wrist angles to keep gripper pointing down
+    // Wrist joints to keep suction cup pointing straight down
     const j4 = 0;
-    const j5 = Math.PI/2 - j2 - j3;
-    const j6 = -j1;
+    const j5 = Math.PI/2 - j2 - j3; // Compensate to point down
+    const j6 = -j1; // Counter-rotate to keep cup orientation fixed
     
     return [j1, j2, j3, j4, j5, j6];
 }
