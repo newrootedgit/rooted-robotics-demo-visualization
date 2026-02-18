@@ -7,7 +7,12 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": ["mujoco", "robotics", "visualization", "rooted-robotics"],
+  "keywords": [
+    "mujoco",
+    "robotics",
+    "visualization",
+    "rooted-robotics"
+  ],
   "author": "Rooted Robotics",
   "license": "MIT",
   "description": "Interactive 3D visualization demos for Rooted Robotics machines",
@@ -15,5 +20,9 @@
     "mujoco_wasm": "^3.2.2",
     "three": "^0.182.0",
     "vite": "^7.3.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2",
+    "puppeteer": "^24.37.4"
   }
 }

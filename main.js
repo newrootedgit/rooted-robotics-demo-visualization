@@ -701,8 +701,9 @@ function solveIK(arm, targetWorld) {
     const local = targetWorld.clone().sub(mountPos);
     
     // J1: Base rotation - rotate to face the target horizontally
+    // With J1=0, arm geometry points in +Z direction (confirmed by testing)
     // atan2(x, z) gives angle from +Z axis toward +X axis
-    // We want the arm's "forward" direction to point at the target
+    // To point arm toward (local.x, local.z), we use atan2 directly
     const j1 = Math.atan2(local.x, local.z);
     
     // For ceiling-mounted arm hanging down:
@@ -839,7 +840,9 @@ function updateStats() {
     if (!statsEl) return;
     
     const totalPlaced = pallets.reduce((sum, p) => sum + p.boxCount, 0);
-    statsEl.innerHTML = `Boxes palletized: ${totalPlaced}`;
+    const armStates = robotArms.map((a, i) => `A${i}:${a.state.slice(0,4)}`).join(' ');
+    const boxCount = boxes.filter(b => b.state === 'conveyor').length;
+    statsEl.innerHTML = `Placed: ${totalPlaced} | Conv: ${boxCount}<br>${armStates}`;
 }
 
 function updateConveyor() {
