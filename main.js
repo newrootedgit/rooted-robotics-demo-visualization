@@ -143,13 +143,54 @@ function init() {
 
 function createDebugMarkers() {
     // Create small spheres to show where arms are trying to reach
-    const markerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00]; // Red, Green, Blue, Yellow for arms 0-3
     for (let i = 0; i < 4; i++) {
-        const marker = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), markerMat);
+        const markerMat = new THREE.MeshBasicMaterial({ color: colors[i] });
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), markerMat);
         marker.visible = true;
         scene.add(marker);
         debugMarkers.push(marker);
     }
+    
+    // Add XYZ axis helper at origin
+    const axisHelper = new THREE.AxesHelper(1); // 1 meter long axes
+    axisHelper.position.set(0, 0.01, 0); // Slightly above floor
+    scene.add(axisHelper);
+    
+    // Add axis labels
+    addAxisLabels();
+}
+
+function addAxisLabels() {
+    // Create canvas-based text labels for axes
+    const createLabel = (text, color, position) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 32, 32);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMat = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.copy(position);
+        sprite.scale.set(0.3, 0.3, 1);
+        scene.add(sprite);
+    };
+    
+    createLabel('+X', '#ff0000', new THREE.Vector3(1.2, 0.1, 0));
+    createLabel('+Y', '#00ff00', new THREE.Vector3(0, 1.2, 0));
+    createLabel('+Z', '#0000ff', new THREE.Vector3(0, 0.1, 1.2));
+    
+    // Label the arms
+    robotArms.forEach((arm, i) => {
+        const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00'];
+        createLabel(`A${i}`, colors[i], new THREE.Vector3(arm.config.x, GANTRY_HEIGHT + 0.2, arm.config.z));
+    });
 }
 
 function onResize() {
@@ -709,10 +750,12 @@ function solveIK(arm, targetWorld) {
 
 function setArmAngles(arm, angles) {
     arm.j1.rotation.y = angles[0];
-    arm.j2.rotation.x = angles[1];
-    arm.j3.rotation.x = angles[2];
+    // Negate J2 and J3 because arm geometry extends in -Z direction
+    // Positive IK angle should make arm reach DOWN, but geometry makes it go UP
+    arm.j2.rotation.x = -angles[1];
+    arm.j3.rotation.x = -angles[2];
     arm.j4.rotation.y = angles[3];
-    arm.j5.rotation.x = angles[4];
+    arm.j5.rotation.x = -angles[4]; // Also negate J5 to compensate
     arm.j6.rotation.y = angles[5];
     arm.currentAngles = [...angles];
 }
