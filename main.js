@@ -1,33 +1,42 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-// Rooted Robotics Demo - Conveyor Palletizing with UR5e/UR7e Arms
-// UR7e specs: 850mm reach, 7.5kg payload (same mechanical design as UR5e)
+// Rooted Robotics Demo - Conveyor Palletizing with UR7e Arms + Forklifts
+// UR7e specs: 850mm reach, 7.5kg payload
 
 let scene, camera, renderer, controls;
-let boxes = [], robotArms = [], pallets = [];
+let boxes = [], robotArms = [], pallets = [], forklifts = [];
 let isPlaying = true;
 let clock = new THREE.Clock();
 
-// UR colors (Universal Robots branding)
+// UR colors
 const UR_BLUE = 0x1a4f6c;
 const UR_LIGHT_BLUE = 0x6ca0c0;
 const UR_BLACK = 0x1a1a1a;
 
-// UR5e/7e dimensions (meters) - from official kinematics
+// UR5e/7e dimensions (meters)
 const UR = {
-    d1: 0.1625,       // base to shoulder
-    a2: 0.425,        // upper arm length
-    a3: 0.3922,       // forearm length
-    d4: 0.1333,       // wrist 1
-    d5: 0.0997,       // wrist 2
-    d6: 0.0996,       // wrist 3
+    d1: 0.1625,
+    a2: 0.425,
+    a3: 0.3922,
+    d4: 0.1333,
+    d5: 0.0997,
+    d6: 0.0996,
     baseRadius: 0.075,
-    reach: 0.85       // max reach
+    reach: 0.85
 };
 
-// Conveyor speed: ~20 boxes/min = 1 box every 3 sec
-const CONVEYOR_SPEED = 0.0008;
+// Box dimensions
+const BOX = { w: 0.10, h: 0.07, d: 0.08 };
+
+// Pallet config: 4x4 grid, 7 layers
+const PALLET_GRID = 4;
+const PALLET_LAYERS = 7;
+const BOXES_PER_PALLET = PALLET_GRID * PALLET_GRID * PALLET_LAYERS; // 112 boxes
+
+// Conveyor: ~20 boxes/min
+const CONVEYOR_SPEED = 0.0006;
+const CONVEYOR_HEIGHT = 0.72;
 
 const BOX_STATE = {
     ON_CONVEYOR: 'conveyor',
@@ -37,10 +46,10 @@ const BOX_STATE = {
 
 function init() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xd8d8d8);
+    scene.background = new THREE.Color(0xd0d0d0);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(3.5, 2.5, 3.5);
+    camera.position.set(5, 4, 5);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -51,7 +60,7 @@ function init() {
     document.getElementById('container').appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.5, 0);
+    controls.target.set(0, 0.6, 0);
     controls.enableDamping = true;
     controls.update();
 
@@ -59,23 +68,22 @@ function init() {
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     
     const mainLight = new THREE.DirectionalLight(0xffffff, 1);
-    mainLight.position.set(5, 10, 5);
+    mainLight.position.set(8, 15, 8);
     mainLight.castShadow = true;
     mainLight.shadow.mapSize.set(2048, 2048);
     mainLight.shadow.camera.near = 1;
-    mainLight.shadow.camera.far = 30;
-    mainLight.shadow.camera.left = -8;
-    mainLight.shadow.camera.right = 8;
-    mainLight.shadow.camera.top = 8;
-    mainLight.shadow.camera.bottom = -8;
+    mainLight.shadow.camera.far = 40;
+    mainLight.shadow.camera.left = -12;
+    mainLight.shadow.camera.right = 12;
+    mainLight.shadow.camera.top = 12;
+    mainLight.shadow.camera.bottom = -12;
     scene.add(mainLight);
-
     scene.add(new THREE.DirectionalLight(0xffffff, 0.3).translateX(-5).translateY(5));
 
     // Floor
     const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(20, 20),
-        new THREE.MeshStandardMaterial({ color: 0x707070, roughness: 0.9 })
+        new THREE.PlaneGeometry(30, 30),
+        new THREE.MeshStandardMaterial({ color: 0x606060, roughness: 0.9 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -83,11 +91,12 @@ function init() {
 
     createConveyor();
     createRobotSystem();
-    createPallets();
+    createPalletStations();
+    createForklifts();
     
     // Initial boxes
-    for (let i = 0; i < 5; i++) {
-        spawnBox(-1.2 + i * 0.3);
+    for (let i = 0; i < 6; i++) {
+        spawnBox(-1.4 + i * 0.25);
     }
 
     // UI
@@ -103,153 +112,120 @@ function init() {
 
 function createConveyor() {
     const group = new THREE.Group();
-    
-    const length = 3;
-    const width = 0.3;
-    const height = 0.72;  // Belt surface height
+    const length = 3.5;
+    const width = 0.30;
     
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x505050, roughness: 0.5, metalness: 0.7 });
     
     // Side rails
     [-1, 1].forEach(side => {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.06, 0.03), frameMat);
-        rail.position.set(0, height - 0.03, side * (width/2 + 0.02));
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.05, 0.025), frameMat);
+        rail.position.set(0, CONVEYOR_HEIGHT - 0.025, side * (width/2 + 0.015));
         rail.castShadow = true;
         group.add(rail);
     });
     
-    // Legs every 0.5m
-    for (let x = -length/2 + 0.25; x <= length/2 - 0.2; x += 0.5) {
+    // Legs
+    for (let x = -length/2 + 0.2; x <= length/2 - 0.15; x += 0.45) {
         [-1, 1].forEach(side => {
-            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, height - 0.08, 12), frameMat);
-            leg.position.set(x, (height - 0.08)/2, side * (width/2 + 0.02));
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, CONVEYOR_HEIGHT - 0.06, 10), frameMat);
+            leg.position.set(x, (CONVEYOR_HEIGHT - 0.06)/2, side * (width/2 + 0.015));
             leg.castShadow = true;
             group.add(leg);
-            
-            // Foot
-            const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.01, 12), frameMat);
-            foot.position.set(x, 0.005, side * (width/2 + 0.02));
-            group.add(foot);
         });
         
-        // Cross brace
-        const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, width + 0.05, 8), frameMat);
+        const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, width + 0.04, 6), frameMat);
         brace.rotation.x = Math.PI / 2;
-        brace.position.set(x, 0.15, 0);
+        brace.position.set(x, 0.12, 0);
         group.add(brace);
     }
     
     // End rollers
     const rollerMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3, metalness: 0.7 });
     [-length/2, length/2].forEach(x => {
-        const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, width, 20), rollerMat);
+        const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, width, 16), rollerMat);
         roller.rotation.x = Math.PI / 2;
-        roller.position.set(x, height - 0.03, 0);
+        roller.position.set(x, CONVEYOR_HEIGHT - 0.025, 0);
         group.add(roller);
     });
     
     // Belt
     const belt = new THREE.Mesh(
-        new THREE.BoxGeometry(length - 0.1, 0.01, width - 0.02),
+        new THREE.BoxGeometry(length - 0.08, 0.008, width - 0.015),
         new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 })
     );
-    belt.position.set(0, height - 0.03, 0);
+    belt.position.set(0, CONVEYOR_HEIGHT - 0.025, 0);
     group.add(belt);
     
     scene.add(group);
 }
 
 function createRobotSystem() {
-    // Overhead gantry - position arms so they can reach conveyor AND pallets
-    // Conveyor at 0.72m, pallets at ~0.15m
-    // Arms mounted at 1.1m height with reach of 0.85m can reach both
-    
-    const gantryHeight = 1.15;
+    const gantryHeight = 1.2;
     const beamMat = new THREE.MeshStandardMaterial({ color: 0x404040, roughness: 0.6, metalness: 0.7 });
     
-    // Simple gantry structure
-    const posts = [
-        [-1.0, 0, 0.9], [0.8, 0, 0.9],
-        [-1.0, 0, -0.9], [0.8, 0, -0.9]
-    ];
-    
-    posts.forEach(p => {
+    // Gantry posts
+    const posts = [[-1.1, 1.0], [0.9, 1.0], [-1.1, -1.0], [0.9, -1.0]];
+    posts.forEach(([x, z]) => {
         const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, gantryHeight, 0.06), beamMat);
-        post.position.set(p[0], gantryHeight/2, p[2]);
+        post.position.set(x, gantryHeight/2, z);
         post.castShadow = true;
         scene.add(post);
     });
     
-    // Top rails
-    const railGeo = new THREE.BoxGeometry(1.9, 0.08, 0.06);
-    [0.9, -0.9].forEach(z => {
-        const rail = new THREE.Mesh(railGeo, beamMat);
-        rail.position.set(-0.1, gantryHeight, z);
-        scene.add(rail);
+    // Top beams
+    [1.0, -1.0].forEach(z => {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.08, 0.06), beamMat);
+        beam.position.set(-0.1, gantryHeight, z);
+        scene.add(beam);
     });
     
-    // Cross beams for arm mounting
-    const crossGeo = new THREE.BoxGeometry(0.06, 0.08, 1.9);
-    [-0.5, 0.4].forEach(x => {
-        const cross = new THREE.Mesh(crossGeo, beamMat);
+    // Cross beams
+    [-0.6, 0.4].forEach(x => {
+        const cross = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 2.1), beamMat);
         cross.position.set(x, gantryHeight, 0);
         scene.add(cross);
     });
     
-    // Create 4 robot arms - positioned to reach conveyor and their pallet
-    const armConfigs = [
-        { x: -0.5, z: 0.5, targetPallet: 0, pickSide: 1 },
-        { x: 0.4, z: 0.5, targetPallet: 1, pickSide: 1 },
-        { x: -0.5, z: -0.5, targetPallet: 2, pickSide: -1 },
-        { x: 0.4, z: -0.5, targetPallet: 3, pickSide: -1 }
+    // 4 robot arms
+    const configs = [
+        { x: -0.6, z: 0.55, targetPallet: 0, side: 1 },
+        { x: 0.4, z: 0.55, targetPallet: 1, side: 1 },
+        { x: -0.6, z: -0.55, targetPallet: 2, side: -1 },
+        { x: 0.4, z: -0.55, targetPallet: 3, side: -1 }
     ];
     
-    armConfigs.forEach((cfg, idx) => createUR7eArm(cfg, idx, gantryHeight));
+    configs.forEach((cfg, idx) => createUR7eArm(cfg, idx, gantryHeight));
 }
 
 function createUR7eArm(config, idx, mountHeight) {
     const arm = new THREE.Group();
     
-    // Materials
     const blueMat = new THREE.MeshStandardMaterial({ color: UR_BLUE, roughness: 0.3, metalness: 0.5 });
     const lightBlueMat = new THREE.MeshStandardMaterial({ color: UR_LIGHT_BLUE, roughness: 0.35, metalness: 0.5 });
     const blackMat = new THREE.MeshStandardMaterial({ color: UR_BLACK, roughness: 0.4, metalness: 0.7 });
     
-    // Mount plate
-    const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.025, 20), blackMat);
-    mount.position.y = -0.0125;
-    arm.add(mount);
+    // Mount
+    arm.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.02, 18), blackMat), { position: new THREE.Vector3(0, -0.01, 0) }));
     
     // Base
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(UR.baseRadius, UR.baseRadius * 1.05, 0.06, 20), blueMat);
-    base.position.y = -0.055;
-    arm.add(base);
+    arm.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(UR.baseRadius, UR.baseRadius * 1.05, 0.055, 18), blueMat), { position: new THREE.Vector3(0, -0.0475, 0) }));
     
     // J1 - Shoulder pan
     const j1 = new THREE.Group();
-    j1.position.y = -0.085;
+    j1.position.y = -0.075;
     
-    // Shoulder housing
-    const shoulderHousing = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.055, 0.055, UR.d1, 20),
-        lightBlueMat
-    );
+    const shoulderHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, UR.d1, 18), lightBlueMat);
     shoulderHousing.position.y = -UR.d1 / 2;
     shoulderHousing.castShadow = true;
     j1.add(shoulderHousing);
     
-    // J2 - Shoulder lift  
+    // J2 - Shoulder lift
     const j2 = new THREE.Group();
     j2.position.y = -UR.d1;
+    j2.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 14), blackMat));
     
-    // Joint sphere
-    j2.add(new THREE.Mesh(new THREE.SphereGeometry(0.048, 16, 16), blackMat));
-    
-    // Upper arm
-    const upperArm = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.042, UR.a2 - 0.09, 8, 16),
-        lightBlueMat
-    );
+    const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.038, UR.a2 - 0.08, 6, 14), lightBlueMat);
     upperArm.rotation.x = Math.PI / 2;
     upperArm.position.z = -UR.a2 / 2;
     upperArm.castShadow = true;
@@ -258,14 +234,9 @@ function createUR7eArm(config, idx, mountHeight) {
     // J3 - Elbow
     const j3 = new THREE.Group();
     j3.position.z = -UR.a2;
+    j3.add(new THREE.Mesh(new THREE.SphereGeometry(0.038, 14, 14), blackMat));
     
-    j3.add(new THREE.Mesh(new THREE.SphereGeometry(0.042, 16, 16), blackMat));
-    
-    // Forearm
-    const forearm = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.035, UR.a3 - 0.07, 8, 16),
-        lightBlueMat
-    );
+    const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, UR.a3 - 0.06, 6, 14), lightBlueMat);
     forearm.rotation.x = Math.PI / 2;
     forearm.position.z = -UR.a3 / 2;
     forearm.castShadow = true;
@@ -274,45 +245,55 @@ function createUR7eArm(config, idx, mountHeight) {
     // J4 - Wrist 1
     const j4 = new THREE.Group();
     j4.position.set(0, UR.d4, -UR.a3);
-    
-    const w1 = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, UR.d5 * 1.8, 16), lightBlueMat);
-    w1.position.y = -UR.d5 * 0.9;
-    j4.add(w1);
+    j4.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, UR.d5 * 1.6, 14), lightBlueMat), { position: new THREE.Vector3(0, -UR.d5 * 0.8, 0) }));
     
     // J5 - Wrist 2
     const j5 = new THREE.Group();
     j5.position.y = -UR.d5;
+    j5.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14), blackMat), { rotation: new THREE.Euler(Math.PI/2, 0, 0) }));
     
-    const w2 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.035, 16), blackMat);
-    w2.rotation.x = Math.PI / 2;
-    j5.add(w2);
-    
-    // J6 - Wrist 3 / Flange
+    // J6 - Tool flange
     const j6 = new THREE.Group();
     j6.position.z = -UR.d6;
+    j6.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.012, 14), blackMat), { rotation: new THREE.Euler(Math.PI/2, 0, 0) }));
     
-    const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.025, 0.015, 16), blackMat);
-    flange.rotation.x = Math.PI / 2;
-    j6.add(flange);
-    
-    // Gripper
+    // Vacuum gripper (suction cup style)
     const gripper = new THREE.Group();
-    gripper.position.z = -0.03;
+    gripper.position.z = -0.02;
     
+    // Gripper body
     const gripBody = new THREE.Mesh(
-        new THREE.BoxGeometry(0.07, 0.02, 0.04),
+        new THREE.CylinderGeometry(0.025, 0.03, 0.04, 14),
         new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.6 })
     );
     gripBody.rotation.x = Math.PI / 2;
     gripper.add(gripBody);
     
-    const fingerMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.4, metalness: 0.7 });
-    const finger1 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.035, 0.015), fingerMat);
-    finger1.position.set(-0.022, 0, -0.04);
-    gripper.add(finger1);
-    const finger2 = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.035, 0.015), fingerMat);
-    finger2.position.set(0.022, 0, -0.04);
-    gripper.add(finger2);
+    // Vacuum hose
+    const hose = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.006, 0.006, 0.08, 8),
+        new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 })
+    );
+    hose.rotation.z = Math.PI / 4;
+    hose.position.set(0.02, 0.03, -0.01);
+    gripper.add(hose);
+    
+    // Suction cup
+    const suctionCup = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.035, 0.025, 0.015, 14),
+        new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.7 })
+    );
+    suctionCup.rotation.x = Math.PI / 2;
+    suctionCup.position.z = -0.0275;
+    gripper.add(suctionCup);
+    
+    // Suction cup rim (orange rubber)
+    const suctionRim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.03, 0.006, 8, 16),
+        new THREE.MeshStandardMaterial({ color: 0xdd6600, roughness: 0.9 })
+    );
+    suctionRim.position.z = -0.035;
+    gripper.add(suctionRim);
     
     // Assemble chain
     j6.add(gripper);
@@ -329,96 +310,174 @@ function createUR7eArm(config, idx, mountHeight) {
     robotArms.push({
         group: arm,
         j1, j2, j3, j4, j5, j6,
-        gripper, finger1, finger2,
+        gripper,
         config, idx,
         state: 'idle',
         targetBox: null,
         heldBox: null,
-        animTime: 0
+        animTime: 0,
+        targetPos: new THREE.Vector3(),
+        currentAngles: [0, 0.25, -0.15, 0, 0.35, 0],
+        targetAngles: [0, 0.25, -0.15, 0, 0.35, 0]
     });
 }
 
-function createPallets() {
-    // Pallets positioned within arm reach
-    // Arms at x=-0.5 and x=0.4, z=±0.5
-    // Pallets slightly outward from arms
+function createPalletStations() {
+    // 4 pallet stations
     const positions = [
-        { x: -0.5, z: 1.0 },   // Front left
-        { x: 0.4, z: 1.0 },    // Front right  
-        { x: -0.5, z: -1.0 },  // Back left
-        { x: 0.4, z: -1.0 }    // Back right
+        { x: -0.6, z: 1.2 },
+        { x: 0.4, z: 1.2 },
+        { x: -0.6, z: -1.2 },
+        { x: 0.4, z: -1.2 }
     ];
     
     positions.forEach((pos, idx) => {
-        // Lazy susan
-        const susanBase = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.38, 0.4, 0.03, 24),
-            new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.5, metalness: 0.7 })
+        // Station floor marking
+        const marking = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.8, 0.8),
+            new THREE.MeshBasicMaterial({ color: 0xddcc00 })
         );
-        susanBase.position.set(pos.x, 0.015, pos.z);
-        scene.add(susanBase);
+        marking.rotation.x = -Math.PI / 2;
+        marking.position.set(pos.x, 0.001, pos.z);
+        scene.add(marking);
         
-        const platform = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.36, 0.36, 0.02, 24),
-            new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.6 })
+        const innerMarking = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.7, 0.7),
+            new THREE.MeshBasicMaterial({ color: 0x606060 })
         );
-        platform.position.set(pos.x, 0.04, pos.z);
-        scene.add(platform);
+        innerMarking.rotation.x = -Math.PI / 2;
+        innerMarking.position.set(pos.x, 0.002, pos.z);
+        scene.add(innerMarking);
         
-        // Pallet
-        const palletGroup = new THREE.Group();
-        const palletMat = new THREE.MeshStandardMaterial({ color: 0x9B7B4A, roughness: 0.85 });
+        createPallet(pos.x, pos.z, idx);
+    });
+}
+
+function createPallet(x, z, idx) {
+    const palletGroup = new THREE.Group();
+    const palletMat = new THREE.MeshStandardMaterial({ color: 0x9B7B4A, roughness: 0.85 });
+    
+    // Pallet sized for 4x4 grid of boxes
+    const palletW = BOX.w * PALLET_GRID + 0.06;  // ~0.46m
+    const palletD = BOX.d * PALLET_GRID + 0.06;  // ~0.38m
+    
+    // Top boards
+    for (let i = -palletD/2 + 0.03; i <= palletD/2 - 0.02; i += 0.05) {
+        const board = new THREE.Mesh(new THREE.BoxGeometry(palletW, 0.01, 0.04), palletMat);
+        board.position.set(0, 0.035, i);
+        board.castShadow = true;
+        palletGroup.add(board);
+    }
+    
+    // Stringers
+    [-palletW/2 + 0.05, 0, palletW/2 - 0.05].forEach(bx => {
+        const stringer = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, palletD), palletMat);
+        stringer.position.set(bx, 0.01, 0);
+        palletGroup.add(stringer);
+    });
+    
+    palletGroup.position.set(x, 0, z);
+    scene.add(palletGroup);
+    
+    // Stack container
+    const stackGroup = new THREE.Group();
+    stackGroup.position.set(x, 0, z);
+    scene.add(stackGroup);
+    
+    pallets.push({
+        group: palletGroup,
+        stackGroup,
+        boxCount: 0,
+        pos: { x, z },
+        idx,
+        state: 'active', // active, full, removing, empty, incoming
+        forklift: null
+    });
+}
+
+function createForklifts() {
+    // Create 2 forklifts - one brings empty pallets, one removes full
+    const forkliftConfigs = [
+        { x: 3, z: 0, role: 'empty', homeX: 3 },    // Brings empty pallets
+        { x: -3, z: 0, role: 'full', homeX: -3 }    // Removes full pallets
+    ];
+    
+    forkliftConfigs.forEach((cfg, idx) => {
+        const forklift = new THREE.Group();
         
-        // Top boards
-        for (let i = -0.22; i <= 0.22; i += 0.073) {
-            const board = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.012, 0.065), palletMat);
-            board.position.set(0, 0.04, i);
-            board.castShadow = true;
-            palletGroup.add(board);
-        }
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdd8800, roughness: 0.5, metalness: 0.3 });
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.4, metalness: 0.7 });
         
-        // Stringers
-        [-0.2, 0, 0.2].forEach(z => {
-            const stringer = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.025), palletMat);
-            stringer.position.set(0, 0.01, z);
-            palletGroup.add(stringer);
+        // Body
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.35), bodyMat);
+        body.position.set(-0.1, 0.25, 0);
+        body.castShadow = true;
+        forklift.add(body);
+        
+        // Cab
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.35, 0.32), bodyMat);
+        cab.position.set(-0.2, 0.55, 0);
+        cab.castShadow = true;
+        forklift.add(cab);
+        
+        // Mast
+        const mast = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.6, 0.25), metalMat);
+        mast.position.set(0.2, 0.4, 0);
+        mast.castShadow = true;
+        forklift.add(mast);
+        
+        // Forks
+        const forkMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3, metalness: 0.8 });
+        [-0.08, 0.08].forEach(fz => {
+            const fork = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.04), forkMat);
+            fork.position.set(0.45, 0.08, fz);
+            forklift.add(fork);
         });
         
-        palletGroup.position.set(pos.x, 0.05, pos.z);
-        scene.add(palletGroup);
+        // Fork carriage
+        const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.15, 0.28), metalMat);
+        carriage.position.set(0.22, 0.12, 0);
+        forklift.add(carriage);
         
-        // Stack container
-        const stackGroup = new THREE.Group();
-        stackGroup.position.set(pos.x, 0.05, pos.z);
-        scene.add(stackGroup);
+        // Wheels
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+        [[-0.25, 0.08, 0.18], [-0.25, 0.08, -0.18], [0.1, 0.06, 0.15], [0.1, 0.06, -0.15]].forEach(([wx, wy, wz], i) => {
+            const wheel = new THREE.Mesh(new THREE.CylinderGeometry(i < 2 ? 0.08 : 0.06, i < 2 ? 0.08 : 0.06, 0.05, 12), wheelMat);
+            wheel.rotation.x = Math.PI / 2;
+            wheel.position.set(wx, wy, wz);
+            forklift.add(wheel);
+        });
         
-        pallets.push({
-            platform, palletGroup, stackGroup,
-            rotation: 0,
-            needsRotation: false,
-            boxCount: 0,
-            pos,
-            // Track which positions are filled in current layer
-            layerPositions: [false, false, false, false]  // 2x2 grid
+        forklift.position.set(cfg.x, 0, cfg.z);
+        forklift.rotation.y = cfg.role === 'empty' ? -Math.PI/2 : Math.PI/2;
+        scene.add(forklift);
+        
+        forklifts.push({
+            group: forklift,
+            config: cfg,
+            state: 'idle',
+            targetPallet: null,
+            animTime: 0,
+            carryingPallet: null
         });
     });
 }
 
 function spawnBox(xPos) {
     const box = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.08, 0.09),
+        new THREE.BoxGeometry(BOX.w, BOX.h, BOX.d),
         new THREE.MeshStandardMaterial({ color: 0xc4a060, roughness: 0.8 })
     );
-    box.position.set(xPos, 0.72 + 0.04, 0);  // On conveyor
+    box.position.set(xPos, CONVEYOR_HEIGHT + BOX.h/2, 0);
     box.castShadow = true;
     scene.add(box);
     
     // Tape
     const tape = new THREE.Mesh(
-        new THREE.BoxGeometry(0.125, 0.01, 0.018),
+        new THREE.BoxGeometry(BOX.w + 0.005, 0.008, 0.015),
         new THREE.MeshStandardMaterial({ color: 0x8B7355 })
     );
-    tape.position.y = 0.04;
+    tape.position.y = BOX.h/2;
     box.add(tape);
     
     boxes.push({
@@ -435,8 +494,7 @@ function resetScene() {
     pallets.forEach(p => {
         while (p.stackGroup.children.length) p.stackGroup.remove(p.stackGroup.children[0]);
         p.boxCount = 0;
-        p.rotation = 0;
-        p.layerPositions = [false, false, false, false];
+        p.state = 'active';
     });
     
     robotArms.forEach(arm => {
@@ -446,15 +504,69 @@ function resetScene() {
         arm.animTime = 0;
     });
     
-    for (let i = 0; i < 5; i++) spawnBox(-1.2 + i * 0.3);
+    forklifts.forEach(f => {
+        f.state = 'idle';
+        f.targetPallet = null;
+        f.group.position.set(f.config.x, 0, 0);
+    });
+    
+    for (let i = 0; i < 6; i++) spawnBox(-1.4 + i * 0.25);
 }
 
-function smoothstep(t) {
-    return t * t * (3 - 2 * t);
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpV3(a, b, t, out) {
+    out.x = lerp(a.x, b.x, t);
+    out.y = lerp(a.y, b.y, t);
+    out.z = lerp(a.z, b.z, t);
 }
 
-function lerp(a, b, t) {
-    return a + (b - a) * t;
+function solveIK(arm, targetWorld) {
+    // Simplified IK for overhead-mounted 6DOF arm
+    // Target is in world coords, need joint angles to reach it
+    
+    const cfg = arm.config;
+    const basePos = new THREE.Vector3(cfg.x, 1.2, cfg.z); // Arm base position
+    
+    // Convert target to arm-local coords
+    const local = targetWorld.clone().sub(basePos);
+    
+    // Calculate angles (simplified geometric IK)
+    const reach = Math.sqrt(local.x * local.x + local.z * local.z);
+    const depth = -local.y; // How far down to reach
+    
+    // J1: Rotation to face target
+    const j1 = Math.atan2(local.x, -local.z);
+    
+    // Arm geometry for J2, J3
+    const L1 = UR.a2;  // Upper arm
+    const L2 = UR.a3;  // Forearm
+    const d = Math.sqrt(reach * reach + depth * depth);
+    
+    // Clamp to reachable
+    const maxReach = L1 + L2 - 0.05;
+    const clampedD = Math.min(d, maxReach);
+    
+    // Law of cosines for elbow angle
+    let cosElbow = (L1*L1 + L2*L2 - clampedD*clampedD) / (2 * L1 * L2);
+    cosElbow = Math.max(-1, Math.min(1, cosElbow));
+    const elbowAngle = Math.acos(cosElbow);
+    
+    // Shoulder angle
+    let cosShoulder = (L1*L1 + clampedD*clampedD - L2*L2) / (2 * L1 * clampedD);
+    cosShoulder = Math.max(-1, Math.min(1, cosShoulder));
+    const shoulderOffset = Math.acos(cosShoulder);
+    const reachAngle = Math.atan2(depth, reach);
+    
+    const j2 = reachAngle + shoulderOffset;
+    const j3 = -(Math.PI - elbowAngle);
+    
+    // Wrist angles to keep gripper pointing down
+    const j4 = 0;
+    const j5 = Math.PI/2 - j2 - j3;
+    const j6 = -j1;
+    
+    return [j1, j2, j3, j4, j5, j6];
 }
 
 function setArmAngles(arm, angles) {
@@ -464,6 +576,7 @@ function setArmAngles(arm, angles) {
     arm.j4.rotation.y = angles[3];
     arm.j5.rotation.x = angles[4];
     arm.j6.rotation.y = angles[5];
+    arm.currentAngles = [...angles];
 }
 
 function lerpAngles(a, b, t) {
@@ -482,11 +595,11 @@ function animate() {
     const time = clock.getElapsedTime();
     
     if (isPlaying) {
-        // Move boxes
+        // Move boxes on conveyor
         boxes.forEach(b => {
             if (b.state === BOX_STATE.ON_CONVEYOR && !b.assignedArm) {
                 b.mesh.position.x += CONVEYOR_SPEED;
-                if (b.mesh.position.x > 1.6) {
+                if (b.mesh.position.x > 1.8) {
                     scene.remove(b.mesh);
                     b.state = 'removed';
                 }
@@ -496,206 +609,257 @@ function animate() {
         // Clean and spawn
         boxes = boxes.filter(b => b.state !== 'removed');
         const conveyorBoxes = boxes.filter(b => b.state === BOX_STATE.ON_CONVEYOR && !b.assignedArm);
-        if (conveyorBoxes.length < 4) {
+        if (conveyorBoxes.length < 5) {
             const minX = conveyorBoxes.length ? Math.min(...conveyorBoxes.map(b => b.mesh.position.x)) : 0;
-            if (minX > -1.2) spawnBox(-1.5);
+            if (minX > -1.3) spawnBox(-1.6);
         }
         
-        // Robot state machines
+        // Robot arm state machines
         robotArms.forEach((arm, armIdx) => {
             const cfg = arm.config;
-            const side = cfg.pickSide;  // 1 = front, -1 = back
+            const pallet = pallets[cfg.targetPallet];
             
-            // Joint angle poses (j1, j2, j3, j4, j5, j6)
-            const home = [0, 0.3, -0.15, 0, 0.4, 0];
-            const reachConveyor = [side * -0.9, 1.0, -0.6, 0, 0.35, 0];
-            const aboveConveyor = [side * -0.9, 0.7, -0.4, 0, 0.35, 0];
-            const reachPallet = [side * 1.0, 0.9, -0.5, 0, 0.3, 0];
-            const abovePallet = [side * 1.0, 0.6, -0.35, 0, 0.3, 0];
+            // Skip if pallet is being serviced
+            if (pallet.state !== 'active') {
+                if (arm.state !== 'idle') {
+                    arm.state = 'idle';
+                    arm.heldBox = null;
+                    arm.targetBox = null;
+                }
+                // Idle pose
+                const homeAngles = [0, 0.25, -0.15, 0, 0.35, 0];
+                setArmAngles(arm, lerpAngles(arm.currentAngles, homeAngles, 0.02));
+                return;
+            }
             
             switch (arm.state) {
                 case 'idle': {
-                    // Look for box in reach zone
+                    // Find box in pickup zone
                     const box = boxes.find(b =>
                         b.state === BOX_STATE.ON_CONVEYOR &&
                         !b.assignedArm &&
-                        b.mesh.position.x > cfg.x - 0.25 &&
-                        b.mesh.position.x < cfg.x + 0.25
+                        b.mesh.position.x > cfg.x - 0.2 &&
+                        b.mesh.position.x < cfg.x + 0.2
                     );
                     
-                    if (box) {
+                    if (box && pallet.boxCount < BOXES_PER_PALLET) {
                         box.assignedArm = armIdx;
                         arm.targetBox = box;
-                        arm.state = 'movingToConveyor';
+                        arm.state = 'moveToBox';
                         arm.animTime = 0;
+                        
+                        // Calculate target position above box
+                        arm.targetPos.copy(box.mesh.position);
+                        arm.targetPos.y += 0.08; // Above box
+                    } else {
+                        // Idle sway
+                        const sway = Math.sin(time * 0.4 + armIdx) * 0.01;
+                        const homeAngles = [sway, 0.25, -0.15, 0, 0.35, 0];
+                        setArmAngles(arm, lerpAngles(arm.currentAngles, homeAngles, 0.02));
                     }
-                    
-                    // Idle pose
-                    const sway = Math.sin(time * 0.4 + armIdx) * 0.015;
-                    setArmAngles(arm, [sway, home[1], home[2], 0, home[4], 0]);
                     break;
                 }
                 
-                case 'movingToConveyor': {
-                    arm.animTime += 0.015;
+                case 'moveToBox': {
+                    arm.animTime += 0.008;
                     const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(home, aboveConveyor, t));
                     
-                    // Open gripper
-                    arm.finger1.position.x = lerp(-0.022, -0.035, t);
-                    arm.finger2.position.x = lerp(0.022, 0.035, t);
+                    // Update target to track moving box
+                    if (arm.targetBox) {
+                        arm.targetPos.copy(arm.targetBox.mesh.position);
+                        arm.targetPos.y += 0.08;
+                    }
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.06));
                     
                     if (arm.animTime >= 1) {
-                        arm.state = 'reachingConveyor';
+                        arm.state = 'reachBox';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'reachingConveyor': {
-                    arm.animTime += 0.018;
-                    const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(aboveConveyor, reachConveyor, t));
+                case 'reachBox': {
+                    arm.animTime += 0.012;
+                    
+                    // Move down to box
+                    if (arm.targetBox) {
+                        arm.targetPos.copy(arm.targetBox.mesh.position);
+                        arm.targetPos.y += BOX.h/2 + 0.02; // Just above box top
+                    }
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
                     
                     if (arm.animTime >= 1) {
-                        arm.state = 'grabbing';
+                        arm.state = 'grab';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'grabbing': {
-                    arm.animTime += 0.04;
-                    const t = Math.min(arm.animTime, 1);
+                case 'grab': {
+                    arm.animTime += 0.05;
                     
-                    arm.finger1.position.x = lerp(-0.035, -0.022, t);
-                    arm.finger2.position.x = lerp(0.035, 0.022, t);
+                    // Keep tracking box position
+                    if (arm.targetBox) {
+                        arm.targetPos.copy(arm.targetBox.mesh.position);
+                        arm.targetPos.y += BOX.h/2 + 0.02;
+                        const targetAngles = solveIK(arm, arm.targetPos);
+                        setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.1));
+                    }
                     
                     if (arm.animTime >= 1 && arm.targetBox) {
                         arm.targetBox.state = BOX_STATE.BEING_PICKED;
                         arm.heldBox = arm.targetBox;
-                        arm.state = 'liftingFromConveyor';
+                        arm.state = 'liftBox';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'liftingFromConveyor': {
-                    arm.animTime += 0.015;
+                case 'liftBox': {
+                    arm.animTime += 0.01;
                     const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(reachConveyor, aboveConveyor, t));
                     
+                    // Lift straight up
+                    const startY = CONVEYOR_HEIGHT + BOX.h/2 + 0.02;
+                    const liftY = CONVEYOR_HEIGHT + 0.25;
+                    arm.targetPos.y = lerp(startY, liftY, t);
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
+                    
+                    // Move held box with gripper
                     if (arm.heldBox) {
                         const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06, gp.z);
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
                     }
                     
                     if (arm.animTime >= 1) {
-                        arm.state = 'movingToPallet';
+                        arm.state = 'moveToPallet';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'movingToPallet': {
+                case 'moveToPallet': {
+                    arm.animTime += 0.008;
+                    const t = smoothstep(Math.min(arm.animTime, 1));
+                    
+                    // Calculate target position on pallet
+                    const layer = Math.floor(pallet.boxCount / (PALLET_GRID * PALLET_GRID));
+                    const posInLayer = pallet.boxCount % (PALLET_GRID * PALLET_GRID);
+                    const row = Math.floor(posInLayer / PALLET_GRID);
+                    const col = posInLayer % PALLET_GRID;
+                    
+                    const palletX = pallet.pos.x + (col - 1.5) * BOX.w;
+                    const palletZ = pallet.pos.z + (row - 1.5) * BOX.d;
+                    const palletY = 0.06 + layer * BOX.h + BOX.h/2 + 0.1; // Above placement
+                    
+                    // Interpolate target position
+                    const startPos = arm.targetPos.clone();
+                    const endPos = new THREE.Vector3(palletX, palletY, palletZ);
+                    lerpV3(startPos, endPos, t, arm.targetPos);
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.06));
+                    
+                    if (arm.heldBox) {
+                        const gp = getGripperWorldPos(arm);
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
+                    }
+                    
+                    if (arm.animTime >= 1) {
+                        arm.state = 'placeBox';
+                        arm.animTime = 0;
+                    }
+                    break;
+                }
+                
+                case 'placeBox': {
                     arm.animTime += 0.012;
                     const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(aboveConveyor, abovePallet, t));
+                    
+                    // Lower to placement
+                    const layer = Math.floor(pallet.boxCount / (PALLET_GRID * PALLET_GRID));
+                    const finalY = 0.06 + layer * BOX.h + BOX.h/2 + 0.015;
+                    arm.targetPos.y = lerp(arm.targetPos.y, finalY, t);
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
                     
                     if (arm.heldBox) {
                         const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06, gp.z);
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
                     }
                     
                     if (arm.animTime >= 1) {
-                        arm.state = 'loweringToPallet';
+                        arm.state = 'release';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'loweringToPallet': {
-                    arm.animTime += 0.015;
-                    const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(abovePallet, reachPallet, t));
-                    
-                    if (arm.heldBox) {
-                        const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06, gp.z);
-                    }
-                    
-                    if (arm.animTime >= 1) {
-                        arm.state = 'releasing';
-                        arm.animTime = 0;
-                    }
-                    break;
-                }
-                
-                case 'releasing': {
+                case 'release': {
                     arm.animTime += 0.04;
-                    const t = Math.min(arm.animTime, 1);
-                    
-                    arm.finger1.position.x = lerp(-0.022, -0.035, t);
-                    arm.finger2.position.x = lerp(0.022, 0.035, t);
                     
                     if (arm.animTime >= 1 && arm.heldBox) {
-                        const pallet = pallets[cfg.targetPallet];
+                        // Place box on pallet stack
                         scene.remove(arm.heldBox.mesh);
                         
-                        // Calculate position in 2x2 layer
-                        const layer = Math.floor(pallet.boxCount / 4);
-                        const posInLayer = pallet.boxCount % 4;
-                        const row = Math.floor(posInLayer / 2);
-                        const col = posInLayer % 2;
+                        const layer = Math.floor(pallet.boxCount / (PALLET_GRID * PALLET_GRID));
+                        const posInLayer = pallet.boxCount % (PALLET_GRID * PALLET_GRID);
+                        const row = Math.floor(posInLayer / PALLET_GRID);
+                        const col = posInLayer % PALLET_GRID;
                         
                         const stackedBox = arm.heldBox.mesh.clone();
                         stackedBox.position.set(
-                            -0.08 + col * 0.16,
-                            0.1 + layer * 0.09,
-                            -0.06 + row * 0.12
+                            (col - 1.5) * BOX.w,
+                            0.06 + layer * BOX.h + BOX.h/2,
+                            (row - 1.5) * BOX.d
                         );
                         pallet.stackGroup.add(stackedBox);
                         pallet.boxCount++;
-                        pallet.layerPositions[posInLayer] = true;
-                        
-                        // Check if we need to rotate for next position
-                        // Rotate when we've filled positions the arm can reach
-                        // and need to fill positions on the far side
-                        const nextPos = pallet.boxCount % 4;
-                        if (nextPos === 2) {
-                            // Filled near side (0,1), rotate to access far side (2,3)
-                            pallet.needsRotation = true;
-                            pallet.targetRotation = pallet.rotation + Math.PI;
-                        }
                         
                         arm.heldBox.state = BOX_STATE.ON_PALLET;
                         arm.heldBox = null;
                         arm.targetBox = null;
-                        arm.state = 'liftingFromPallet';
+                        
+                        // Check if pallet is full
+                        if (pallet.boxCount >= BOXES_PER_PALLET) {
+                            pallet.state = 'full';
+                        }
+                        
+                        arm.state = 'retract';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'liftingFromPallet': {
-                    arm.animTime += 0.015;
+                case 'retract': {
+                    arm.animTime += 0.01;
                     const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(reachPallet, abovePallet, t));
                     
-                    arm.finger1.position.x = lerp(-0.035, -0.022, t);
-                    arm.finger2.position.x = lerp(0.035, 0.022, t);
+                    // Lift up
+                    arm.targetPos.y = lerp(arm.targetPos.y, 1.0, t);
+                    
+                    const targetAngles = solveIK(arm, arm.targetPos);
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.06));
                     
                     if (arm.animTime >= 1) {
-                        arm.state = 'returning';
+                        arm.state = 'return';
                         arm.animTime = 0;
                     }
                     break;
                 }
                 
-                case 'returning': {
-                    arm.animTime += 0.012;
-                    const t = smoothstep(Math.min(arm.animTime, 1));
-                    setArmAngles(arm, lerpAngles(abovePallet, home, t));
+                case 'return': {
+                    arm.animTime += 0.01;
+                    
+                    const homeAngles = [0, 0.25, -0.15, 0, 0.35, 0];
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, homeAngles, 0.04));
                     
                     if (arm.animTime >= 1) {
                         arm.state = 'idle';
@@ -706,18 +870,159 @@ function animate() {
             }
         });
         
-        // Rotate pallets only when needed
-        pallets.forEach(p => {
-            if (p.needsRotation) {
-                const diff = p.targetRotation - p.rotation;
-                if (Math.abs(diff) > 0.01) {
-                    p.rotation += diff * 0.03;
-                    p.platform.rotation.y = p.rotation;
-                    p.palletGroup.rotation.y = p.rotation;
-                    p.stackGroup.rotation.y = p.rotation;
-                } else {
-                    p.rotation = p.targetRotation;
-                    p.needsRotation = false;
+        // Forklift state machines
+        forklifts.forEach(forklift => {
+            const cfg = forklift.config;
+            
+            if (cfg.role === 'full') {
+                // Find full pallets to remove
+                if (forklift.state === 'idle') {
+                    const fullPallet = pallets.find(p => p.state === 'full');
+                    if (fullPallet) {
+                        forklift.targetPallet = fullPallet;
+                        fullPallet.state = 'removing';
+                        forklift.state = 'approachFull';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                // Animate forklift
+                if (forklift.state === 'approachFull') {
+                    forklift.animTime += 0.003;
+                    const t = smoothstep(Math.min(forklift.animTime, 1));
+                    
+                    const targetX = forklift.targetPallet.pos.x - 0.7;
+                    const targetZ = forklift.targetPallet.pos.z > 0 ? 
+                        forklift.targetPallet.pos.z + 0.4 : 
+                        forklift.targetPallet.pos.z - 0.4;
+                    
+                    forklift.group.position.x = lerp(cfg.homeX, targetX, t);
+                    forklift.group.position.z = lerp(0, targetZ, t);
+                    forklift.group.rotation.y = lerp(Math.PI/2, 0, t);
+                    
+                    if (forklift.animTime >= 1) {
+                        forklift.state = 'liftPallet';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                if (forklift.state === 'liftPallet') {
+                    forklift.animTime += 0.01;
+                    
+                    if (forklift.animTime >= 1) {
+                        // Attach pallet to forklift
+                        forklift.carryingPallet = forklift.targetPallet;
+                        forklift.state = 'departFull';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                if (forklift.state === 'departFull') {
+                    forklift.animTime += 0.003;
+                    const t = smoothstep(Math.min(forklift.animTime, 1));
+                    
+                    const startX = forklift.group.position.x;
+                    const startZ = forklift.group.position.z;
+                    
+                    forklift.group.position.x = lerp(startX, cfg.homeX - 1, t);
+                    forklift.group.position.z = lerp(startZ, 0, t);
+                    forklift.group.rotation.y = lerp(0, Math.PI/2, t);
+                    
+                    // Move pallet with forklift
+                    if (forklift.carryingPallet) {
+                        forklift.carryingPallet.group.position.x = forklift.group.position.x + 0.55;
+                        forklift.carryingPallet.group.position.z = forklift.group.position.z;
+                        forklift.carryingPallet.group.position.y = 0.08;
+                        forklift.carryingPallet.stackGroup.position.copy(forklift.carryingPallet.group.position);
+                    }
+                    
+                    if (forklift.animTime >= 1) {
+                        // Remove pallet from scene and create new empty one
+                        if (forklift.carryingPallet) {
+                            scene.remove(forklift.carryingPallet.group);
+                            scene.remove(forklift.carryingPallet.stackGroup);
+                            const idx = forklift.carryingPallet.idx;
+                            const pos = { x: forklift.carryingPallet.pos.x, z: forklift.carryingPallet.pos.z };
+                            pallets[idx] = null;
+                            
+                            // Mark for empty pallet delivery
+                            forklift.carryingPallet = null;
+                            forklift.targetPallet = { idx, pos };
+                        }
+                        forklift.state = 'returnHome';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                if (forklift.state === 'returnHome') {
+                    forklift.animTime += 0.005;
+                    const t = smoothstep(Math.min(forklift.animTime, 1));
+                    
+                    forklift.group.position.x = lerp(forklift.group.position.x, cfg.homeX, t);
+                    
+                    if (forklift.animTime >= 1) {
+                        // Signal empty forklift to bring new pallet
+                        const emptyForklift = forklifts.find(f => f.config.role === 'empty' && f.state === 'idle');
+                        if (emptyForklift && forklift.targetPallet) {
+                            emptyForklift.targetPallet = forklift.targetPallet;
+                            emptyForklift.state = 'fetchEmpty';
+                            emptyForklift.animTime = 0;
+                        }
+                        forklift.targetPallet = null;
+                        forklift.state = 'idle';
+                        forklift.animTime = 0;
+                    }
+                }
+            }
+            
+            if (cfg.role === 'empty') {
+                if (forklift.state === 'fetchEmpty') {
+                    forklift.animTime += 0.003;
+                    const t = smoothstep(Math.min(forklift.animTime, 1));
+                    
+                    const targetX = forklift.targetPallet.pos.x + 0.7;
+                    const targetZ = forklift.targetPallet.pos.z > 0 ?
+                        forklift.targetPallet.pos.z + 0.4 :
+                        forklift.targetPallet.pos.z - 0.4;
+                    
+                    forklift.group.position.x = lerp(cfg.homeX, targetX, t);
+                    forklift.group.position.z = lerp(0, targetZ, t);
+                    forklift.group.rotation.y = lerp(-Math.PI/2, Math.PI, t);
+                    
+                    if (forklift.animTime >= 1) {
+                        forklift.state = 'placePallet';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                if (forklift.state === 'placePallet') {
+                    forklift.animTime += 0.01;
+                    
+                    if (forklift.animTime >= 1) {
+                        // Create new pallet
+                        const idx = forklift.targetPallet.idx;
+                        const pos = forklift.targetPallet.pos;
+                        createPallet(pos.x, pos.z, idx);
+                        pallets[idx].state = 'active';
+                        
+                        forklift.state = 'returnEmpty';
+                        forklift.animTime = 0;
+                    }
+                }
+                
+                if (forklift.state === 'returnEmpty') {
+                    forklift.animTime += 0.004;
+                    const t = smoothstep(Math.min(forklift.animTime, 1));
+                    
+                    forklift.group.position.x = lerp(forklift.group.position.x, cfg.homeX, t);
+                    forklift.group.position.z = lerp(forklift.group.position.z, 0, t);
+                    forklift.group.rotation.y = lerp(forklift.group.rotation.y, -Math.PI/2, t);
+                    
+                    if (forklift.animTime >= 1) {
+                        forklift.targetPallet = null;
+                        forklift.state = 'idle';
+                        forklift.animTime = 0;
+                    }
                 }
             }
         });
