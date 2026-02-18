@@ -206,10 +206,14 @@ function createUR7eArm(config, idx, mountHeight) {
     const blackMat = new THREE.MeshStandardMaterial({ color: UR_BLACK, roughness: 0.4, metalness: 0.7 });
     
     // Mount
-    arm.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.02, 18), blackMat), { position: new THREE.Vector3(0, -0.01, 0) }));
+    const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.02, 18), blackMat);
+    mount.position.set(0, -0.01, 0);
+    arm.add(mount);
     
     // Base
-    arm.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(UR.baseRadius, UR.baseRadius * 1.05, 0.055, 18), blueMat), { position: new THREE.Vector3(0, -0.0475, 0) }));
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(UR.baseRadius, UR.baseRadius * 1.05, 0.055, 18), blueMat);
+    base.position.set(0, -0.0475, 0);
+    arm.add(base);
     
     // J1 - Shoulder pan
     const j1 = new THREE.Group();
@@ -245,17 +249,23 @@ function createUR7eArm(config, idx, mountHeight) {
     // J4 - Wrist 1
     const j4 = new THREE.Group();
     j4.position.set(0, UR.d4, -UR.a3);
-    j4.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, UR.d5 * 1.6, 14), lightBlueMat), { position: new THREE.Vector3(0, -UR.d5 * 0.8, 0) }));
+    const wrist1Cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, UR.d5 * 1.6, 14), lightBlueMat);
+    wrist1Cyl.position.set(0, -UR.d5 * 0.8, 0);
+    j4.add(wrist1Cyl);
     
     // J5 - Wrist 2
     const j5 = new THREE.Group();
     j5.position.y = -UR.d5;
-    j5.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14), blackMat), { rotation: new THREE.Euler(Math.PI/2, 0, 0) }));
+    const wrist2Cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.03, 14), blackMat);
+    wrist2Cyl.rotation.set(Math.PI/2, 0, 0);
+    j5.add(wrist2Cyl);
     
     // J6 - Tool flange
     const j6 = new THREE.Group();
     j6.position.z = -UR.d6;
-    j6.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.012, 14), blackMat), { rotation: new THREE.Euler(Math.PI/2, 0, 0) }));
+    const flangeCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.012, 14), blackMat);
+    flangeCyl.rotation.set(Math.PI/2, 0, 0);
+    j6.add(flangeCyl);
     
     // Vacuum gripper (suction cup style)
     const gripper = new THREE.Group();
