@@ -7,7 +7,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 let scene, camera, renderer, controls;
 let boxes = [], robotArms = [], pallets = [], forklifts = [];
 let isPlaying = true;
+let simSpeed = 1.0;
 let clock = new THREE.Clock();
+let debugMarkers = [];
 
 // UR colors
 const UR_BLUE = 0x1a4f6c;
@@ -119,15 +121,35 @@ function init() {
     // UI
     const playBtn = document.getElementById('playPause');
     const resetBtn = document.getElementById('reset');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedLabel = document.getElementById('speedLabel');
     
     playBtn?.addEventListener('click', () => {
         isPlaying = !isPlaying;
-        playBtn.textContent = isPlaying ? 'Pause' : 'Play';
+        playBtn.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
     });
     resetBtn?.addEventListener('click', resetScene);
+    speedSlider?.addEventListener('input', (e) => {
+        simSpeed = parseFloat(e.target.value);
+        if (speedLabel) speedLabel.textContent = simSpeed.toFixed(1) + 'x';
+    });
 
+    // Add debug markers to visualize targets
+    createDebugMarkers();
+    
     window.addEventListener('resize', onResize);
     animate();
+}
+
+function createDebugMarkers() {
+    // Create small spheres to show where arms are trying to reach
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    for (let i = 0; i < 4; i++) {
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), markerMat);
+        marker.visible = true;
+        scene.add(marker);
+        debugMarkers.push(marker);
+    }
 }
 
 function onResize() {
@@ -733,14 +755,27 @@ function animate() {
         updateForklifts();
     }
     
+    // Update stats display
+    updateStats();
+    
     renderer.render(scene, camera);
+}
+
+function updateStats() {
+    const statsEl = document.getElementById('stats');
+    if (!statsEl) return;
+    
+    const totalPlaced = pallets.reduce((sum, p) => sum + p.boxCount, 0);
+    const armStates = robotArms.map((a, i) => `A${i}:${a.state.substring(0,4)}`).join(' ');
+    
+    statsEl.innerHTML = `Boxes placed: ${totalPlaced}<br>${armStates}`;
 }
 
 function updateConveyor() {
     // Move boxes on conveyor
     boxes.forEach(b => {
         if (b.state === BOX_STATE.ON_CONVEYOR && !b.assignedArm) {
-            b.mesh.position.x += CONVEYOR_SPEED;
+            b.mesh.position.x += CONVEYOR_SPEED * simSpeed;
             if (b.mesh.position.x > 2.0) {
                 scene.remove(b.mesh);
                 b.state = 'removed';
@@ -763,6 +798,11 @@ function updateRobotArms(time) {
     robotArms.forEach((arm, armIdx) => {
         const cfg = arm.config;
         const pallet = pallets[cfg.targetPallet];
+        
+        // Update debug marker to show target position
+        if (debugMarkers[armIdx]) {
+            debugMarkers[armIdx].position.copy(arm.targetPos);
+        }
         
         // Skip if pallet is being serviced by forklift
         if (pallet && pallet.state !== 'active') {
@@ -836,7 +876,7 @@ function handleIdleState(arm, armIdx, time, pallet) {
 }
 
 function handleMoveToBox(arm) {
-    arm.animTime += 0.012;
+    arm.animTime += 0.012 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.targetBox) {
@@ -861,7 +901,7 @@ function handleMoveToBox(arm) {
 }
 
 function handlePickBox(arm) {
-    arm.animTime += 0.015;
+    arm.animTime += 0.015 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.targetBox) {
@@ -892,7 +932,7 @@ function handlePickBox(arm) {
 }
 
 function handleLiftBox(arm) {
-    arm.animTime += 0.012;
+    arm.animTime += 0.012 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox) {
@@ -922,7 +962,7 @@ function handleLiftBox(arm) {
 }
 
 function handleMoveToPallet(arm, pallet) {
-    arm.animTime += 0.008;
+    arm.animTime += 0.008 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox || !pallet) {
@@ -966,7 +1006,7 @@ function handleMoveToPallet(arm, pallet) {
 }
 
 function handlePlaceBox(arm, pallet) {
-    arm.animTime += 0.015;
+    arm.animTime += 0.015 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox || !pallet) {
@@ -1009,7 +1049,7 @@ function handlePlaceBox(arm, pallet) {
 }
 
 function handleRelease(arm, pallet) {
-    arm.animTime += 0.05;
+    arm.animTime += 0.05 * simSpeed;
     
     if (arm.animTime >= 1.0 && arm.heldBox && pallet) {
         // Remove from scene and add to pallet stack
@@ -1043,7 +1083,7 @@ function handleRelease(arm, pallet) {
 }
 
 function handleRetract(arm) {
-    arm.animTime += 0.015;
+    arm.animTime += 0.015 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     // Return to idle pose
@@ -1081,7 +1121,7 @@ function updateFullForklift(forklift, cfg) {
     }
     
     if (forklift.state === 'approachFull' && forklift.targetPallet) {
-        forklift.animTime += 0.003;
+        forklift.animTime += 0.003 * simSpeed;
         const t = smoothstep(clamp(forklift.animTime, 0, 1));
         
         const targetX = forklift.targetPallet.pos.x - 0.8;
@@ -1100,7 +1140,7 @@ function updateFullForklift(forklift, cfg) {
     }
     
     if (forklift.state === 'liftingFull') {
-        forklift.animTime += 0.01;
+        forklift.animTime += 0.01 * simSpeed;
         
         if (forklift.animTime >= 1 && forklift.targetPallet) {
             // Attach pallet to forklift
@@ -1112,7 +1152,7 @@ function updateFullForklift(forklift, cfg) {
     }
     
     if (forklift.state === 'removingFull') {
-        forklift.animTime += 0.003;
+        forklift.animTime += 0.003 * simSpeed;
         const t = smoothstep(clamp(forklift.animTime, 0, 1));
         
         forklift.group.position.x = lerp(forklift.group.position.x, cfg.homeX - 2, t);
