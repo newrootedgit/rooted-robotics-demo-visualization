@@ -167,6 +167,12 @@ function setCameraPreset(preset) {
 }
 
 function createDebugMarkers() {
+    // Debug markers disabled for production
+    // To enable: set DEBUG_MODE = true
+    const DEBUG_MODE = false;
+    
+    if (!DEBUG_MODE) return;
+    
     // Create small spheres to show where arms are trying to reach
     const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00]; // Red, Green, Blue, Yellow for arms 0-3
     for (let i = 0; i < 4; i++) {
@@ -834,14 +840,7 @@ function updateStats() {
     if (!statsEl) return;
     
     const totalPlaced = pallets.reduce((sum, p) => sum + p.boxCount, 0);
-    const armStates = robotArms.map((a, i) => `A${i}:${a.state.substring(0,4)}`).join(' ');
-    
-    // Show target positions for debugging
-    const targets = robotArms.map((a, i) => 
-        `A${i}: tgt(${a.targetPos.x.toFixed(2)},${a.targetPos.y.toFixed(2)},${a.targetPos.z.toFixed(2)})`
-    ).join('<br>');
-    
-    statsEl.innerHTML = `Boxes: ${totalPlaced} | ${armStates}<br><small>${targets}</small>`;
+    statsEl.innerHTML = `Boxes palletized: ${totalPlaced}`;
 }
 
 function updateConveyor() {
