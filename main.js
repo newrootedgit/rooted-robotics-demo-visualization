@@ -167,9 +167,8 @@ function setCameraPreset(preset) {
 }
 
 function createDebugMarkers() {
-    // Debug markers disabled for production
-    // To enable: set DEBUG_MODE = true
-    const DEBUG_MODE = false;
+    // Debug markers enabled for dev branch
+    const DEBUG_MODE = true;
     
     if (!DEBUG_MODE) return;
     
