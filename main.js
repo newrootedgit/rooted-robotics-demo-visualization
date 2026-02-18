@@ -137,8 +137,33 @@ function init() {
     // Add debug markers to visualize targets
     createDebugMarkers();
     
+    // Camera preset buttons
+    document.querySelectorAll('.cam-btn').forEach(btn => {
+        btn.addEventListener('click', () => setCameraPreset(btn.dataset.cam));
+    });
+    
     window.addEventListener('resize', onResize);
     animate();
+}
+
+function setCameraPreset(preset) {
+    const presets = {
+        iso: { pos: [5, 4, 5], target: [0, 0.6, 0] },
+        top: { pos: [0, 6, 0.01], target: [0, 0, 0] },
+        front: { pos: [0, 1.5, 5], target: [0, 0.8, 0] },
+        side: { pos: [5, 1.5, 0], target: [0, 0.8, 0] },
+        a0: { pos: [-0.6 + 1.5, 2, 0.7 + 1.5], target: [-0.6, 1, 0.7] },
+        a1: { pos: [0.5 + 1.5, 2, 0.7 + 1.5], target: [0.5, 1, 0.7] },
+        a2: { pos: [-0.6 + 1.5, 2, -0.7 - 1.5], target: [-0.6, 1, -0.7] },
+        a3: { pos: [0.5 + 1.5, 2, -0.7 - 1.5], target: [0.5, 1, -0.7] },
+    };
+    
+    const p = presets[preset];
+    if (p) {
+        camera.position.set(...p.pos);
+        controls.target.set(...p.target);
+        controls.update();
+    }
 }
 
 function createDebugMarkers() {
@@ -811,7 +836,12 @@ function updateStats() {
     const totalPlaced = pallets.reduce((sum, p) => sum + p.boxCount, 0);
     const armStates = robotArms.map((a, i) => `A${i}:${a.state.substring(0,4)}`).join(' ');
     
-    statsEl.innerHTML = `Boxes placed: ${totalPlaced}<br>${armStates}`;
+    // Show target positions for debugging
+    const targets = robotArms.map((a, i) => 
+        `A${i}: tgt(${a.targetPos.x.toFixed(2)},${a.targetPos.y.toFixed(2)},${a.targetPos.z.toFixed(2)})`
+    ).join('<br>');
+    
+    statsEl.innerHTML = `Boxes: ${totalPlaced} | ${armStates}<br><small>${targets}</small>`;
 }
 
 function updateConveyor() {
