@@ -727,9 +727,17 @@ function animate() {
                     // Hold position on box while "vacuum engages"
                     if (arm.targetBox) {
                         arm.targetPos.copy(arm.targetBox.mesh.position);
-                        arm.targetPos.y += BOX.h/2 + 0.06; // Slightly pressed down
+                        arm.targetPos.y += BOX.h/2 + 0.06;
                         const targetAngles = solveIK(arm, arm.targetPos);
                         setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.15));
+                        
+                        // Smoothly move box toward gripper position (visual snap)
+                        const gp = getGripperWorldPos(arm);
+                        const suctionY = gp.y - 0.06;
+                        const boxTargetY = suctionY - BOX.h/2;
+                        arm.targetBox.mesh.position.x = lerp(arm.targetBox.mesh.position.x, gp.x, 0.1);
+                        arm.targetBox.mesh.position.z = lerp(arm.targetBox.mesh.position.z, gp.z, 0.1);
+                        arm.targetBox.mesh.position.y = lerp(arm.targetBox.mesh.position.y, boxTargetY, 0.1);
                     }
                     
                     if (arm.animTime >= 1 && arm.targetBox) {
