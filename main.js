@@ -608,8 +608,9 @@ function solveIK(arm, targetWorld) {
     const local = targetWorld.clone().sub(mountPos);
     
     // J1: Base rotation - rotate to face the target horizontally
-    // For ceiling mount: positive angle rotates toward +X when looking down
-    const j1 = Math.atan2(local.x, local.z * cfg.side);
+    // atan2(x, z) gives angle from +Z axis toward +X axis
+    // We want the arm's "forward" direction to point at the target
+    const j1 = Math.atan2(local.x, local.z);
     
     // Transform target into the arm's rotated 2D plane (after J1 rotation)
     // Horizontal distance from base axis
