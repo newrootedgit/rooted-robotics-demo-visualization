@@ -612,71 +612,74 @@ function solveIK(arm, targetWorld) {
     // We want the arm's "forward" direction to point at the target
     const j1 = Math.atan2(local.x, local.z);
     
-    // Transform target into the arm's rotated 2D plane (after J1 rotation)
-    // Horizontal distance from base axis
+    // For ceiling-mounted arm hanging down:
+    // - local.y is negative when target is below mount (which is normal)
+    // - We work in a 2D plane after J1 rotation
+    
+    // Horizontal distance from base axis to target
     const horizDist = Math.sqrt(local.x * local.x + local.z * local.z);
-    // Vertical distance (positive = down from mount)
-    const vertDist = -local.y;
     
-    // The wrist center needs to be TOOL_TOTAL above the target
-    // In the arm's plane: we need to reach (horizDist, vertDist - TOOL_TOTAL)
+    // Vertical offset: local.y is negative for targets below mount
+    // For IK we need the wrist position, accounting for tool length
+    // Tool points DOWN in world frame, so wrist is TOOL_TOTAL above suction tip
+    
+    // Target position relative to SHOULDER joint (which is UR.d1 below mount)
+    // Shoulder is at y = -UR.d1 in arm-local coordinates (below mount)
+    // Target is at y = local.y in arm-local coordinates
+    // So target is (local.y - (-UR.d1)) = (local.y + UR.d1) below shoulder
+    // But we want wrist, which is TOOL_TOTAL above target
+    // Wrist Y relative to shoulder: local.y + UR.d1 + TOOL_TOTAL
+    
+    const wristY = local.y + UR.d1 + TOOL_TOTAL; // Will be negative (wrist below shoulder)
     const wristHoriz = horizDist;
-    const wristVert = vertDist - TOOL_TOTAL;
     
-    // Shoulder joint is UR.d1 below mount
-    // So from shoulder, we need to reach:
-    const shoulderToWristHoriz = wristHoriz;
-    const shoulderToWristVert = wristVert - UR.d1;
+    // Distance from shoulder to wrist target
+    const D = Math.sqrt(wristHoriz * wristHoriz + wristY * wristY);
     
-    // Distance from shoulder to wrist
-    const D = Math.sqrt(shoulderToWristHoriz * shoulderToWristHoriz + shoulderToWristVert * shoulderToWristVert);
-    
-    // Arm link lengths (in the 2D plane)
+    // Arm link lengths
     const L1 = UR.a2;  // Upper arm: 0.425m
     const L2 = UR.a3;  // Forearm: 0.3922m
     
     // Clamp to reachable distance
-    const maxReach = L1 + L2 - 0.01;
-    const minReach = Math.abs(L1 - L2) + 0.01;
+    const maxReach = L1 + L2 - 0.02;
+    const minReach = Math.abs(L1 - L2) + 0.02;
     const clampedD = clamp(D, minReach, maxReach);
     
-    // Use law of cosines to find elbow angle
-    // cos(elbow) = (L1² + L2² - D²) / (2·L1·L2)
+    // Law of cosines for elbow angle
     let cosElbow = (L1*L1 + L2*L2 - clampedD*clampedD) / (2 * L1 * L2);
     cosElbow = clamp(cosElbow, -1, 1);
-    const elbowAngle = Math.acos(cosElbow);
+    const elbowInnerAngle = Math.acos(cosElbow); // Angle at elbow joint
     
-    // Shoulder angle: combines angle to target + angle offset for elbow
-    // cos(offset) = (L1² + D² - L2²) / (2·L1·D)
+    // Shoulder offset angle (angle between upper arm and line to wrist)
     let cosShoulder = (L1*L1 + clampedD*clampedD - L2*L2) / (2 * L1 * clampedD);
     cosShoulder = clamp(cosShoulder, -1, 1);
     const shoulderOffset = Math.acos(cosShoulder);
     
-    // Angle from shoulder to wrist target (in the arm's 2D plane)
-    // 0 = horizontal forward, positive = down
-    const targetAngle = Math.atan2(shoulderToWristVert, shoulderToWristHoriz);
+    // Angle from shoulder to wrist in the arm's 2D plane
+    // atan2(y, x) where y is vertical (negative = down), x is horizontal (positive = outward)
+    const angleToWrist = Math.atan2(-wristY, wristHoriz); // Negate wristY so positive = down
     
-    // J2 (shoulder): For a ceiling mount arm reaching down-forward
-    // We want "elbow down" configuration for this application
-    const j2 = targetAngle - shoulderOffset;
+    // J2: Shoulder angle
+    // For "elbow down" config reaching down-forward, we ADD shoulderOffset
+    // J2 positive = arm rotates so upper arm points more forward/down
+    const j2 = angleToWrist + shoulderOffset;
     
-    // J3 (elbow): Bend so forearm continues toward target
-    // Elbow angle is measured as deviation from straight
-    const j3 = Math.PI - elbowAngle;
+    // J3: Elbow angle
+    // Measured as bend from straight. Positive = forearm bends "under" upper arm
+    const j3 = -(Math.PI - elbowInnerAngle);
     
-    // Calculate wrist angles to keep suction cup pointing straight down
-    // The cumulative rotation from J2 and J3 determines where the forearm points
-    const forearmAngle = j2 + j3;
+    // Wrist angles to keep suction cup pointing straight down
+    const armAngle = j2 + j3; // Net angle of forearm from horizontal
     
-    // J4 (wrist 1, Y rotation): Keep at 0 for simple down-pointing
+    // J4: Wrist 1 - keep at 0
     const j4 = 0;
     
-    // J5 (wrist 2, X rotation): Compensate to point suction cup straight down
-    // We need the tool to point down (-Y world), which is +Z in tool frame
-    // After J2+J3 rotations, we need to add rotation to point down
-    const j5 = Math.PI/2 - forearmAngle;
+    // J5: Wrist 2 - compensate so tool points down
+    // When armAngle = 0 (horizontal), we need j5 = PI/2 to point down
+    // When armAngle = PI/2 (pointing down), we need j5 = 0
+    const j5 = Math.PI/2 - armAngle;
     
-    // J6 (wrist 3, Y rotation): Counter-rotate to keep cup orientation stable
+    // J6: Counter-rotate for stable cup orientation
     const j6 = -j1;
     
     return [j1, j2, j3, j4, j5, j6];
