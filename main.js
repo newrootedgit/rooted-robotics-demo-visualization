@@ -681,18 +681,24 @@ function animate() {
                 }
                 
                 case 'reachBox': {
-                    arm.animTime += 0.012;
+                    arm.animTime += 0.015;
                     
-                    // Move down to box
+                    // Move down to contact box - suction cup tip is ~0.06m below IK target
+                    // So IK target should be box_top + 0.06 to have suction cup touch top
                     if (arm.targetBox) {
                         arm.targetPos.copy(arm.targetBox.mesh.position);
-                        arm.targetPos.y += BOX.h/2 + 0.02; // Just above box top
+                        arm.targetPos.y += BOX.h/2 + 0.065; // Suction cup will be at box top
                     }
                     
                     const targetAngles = solveIK(arm, arm.targetPos);
-                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.1));
                     
-                    if (arm.animTime >= 1) {
+                    // Check if gripper is close enough to box
+                    const gripPos = getGripperWorldPos(arm);
+                    const boxTop = arm.targetBox ? arm.targetBox.mesh.position.y + BOX.h/2 : 0;
+                    const suctionTip = gripPos.y - 0.06;
+                    
+                    if (arm.animTime >= 1 || Math.abs(suctionTip - boxTop) < 0.015) {
                         arm.state = 'grab';
                         arm.animTime = 0;
                     }
@@ -700,14 +706,14 @@ function animate() {
                 }
                 
                 case 'grab': {
-                    arm.animTime += 0.05;
+                    arm.animTime += 0.04;
                     
-                    // Keep tracking box position
+                    // Hold position on box while "vacuum engages"
                     if (arm.targetBox) {
                         arm.targetPos.copy(arm.targetBox.mesh.position);
-                        arm.targetPos.y += BOX.h/2 + 0.02;
+                        arm.targetPos.y += BOX.h/2 + 0.06; // Slightly pressed down
                         const targetAngles = solveIK(arm, arm.targetPos);
-                        setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.1));
+                        setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.15));
                     }
                     
                     if (arm.animTime >= 1 && arm.targetBox) {
@@ -720,21 +726,22 @@ function animate() {
                 }
                 
                 case 'liftBox': {
-                    arm.animTime += 0.01;
+                    arm.animTime += 0.012;
                     const t = smoothstep(Math.min(arm.animTime, 1));
                     
-                    // Lift straight up
-                    const startY = CONVEYOR_HEIGHT + BOX.h/2 + 0.02;
-                    const liftY = CONVEYOR_HEIGHT + 0.25;
+                    // Lift straight up - keep box attached to suction cup
+                    const startY = CONVEYOR_HEIGHT + BOX.h/2 + 0.065;
+                    const liftY = CONVEYOR_HEIGHT + 0.35;
                     arm.targetPos.y = lerp(startY, liftY, t);
                     
                     const targetAngles = solveIK(arm, arm.targetPos);
-                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.1));
                     
-                    // Move held box with gripper
+                    // Box stays attached to suction cup (tip is 0.06m below gripper origin)
                     if (arm.heldBox) {
                         const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
+                        // Suction cup grabs center-top of box, so box center is BOX.h/2 below suction tip
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06 - BOX.h/2, gp.z);
                     }
                     
                     if (arm.animTime >= 1) {
@@ -756,7 +763,8 @@ function animate() {
                     
                     const palletX = pallet.pos.x + (col - 1.5) * BOX.w;
                     const palletZ = pallet.pos.z + (row - 1.5) * BOX.d;
-                    const palletY = 0.06 + layer * BOX.h + BOX.h/2 + 0.1; // Above placement
+                    // IK target above pallet position - add 0.15 clearance + suction offset
+                    const palletY = 0.06 + layer * BOX.h + BOX.h + 0.2;
                     
                     // Interpolate target position
                     const startPos = arm.targetPos.clone();
@@ -768,7 +776,7 @@ function animate() {
                     
                     if (arm.heldBox) {
                         const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06 - BOX.h/2, gp.z);
                     }
                     
                     if (arm.animTime >= 1) {
@@ -779,20 +787,21 @@ function animate() {
                 }
                 
                 case 'placeBox': {
-                    arm.animTime += 0.012;
+                    arm.animTime += 0.015;
                     const t = smoothstep(Math.min(arm.animTime, 1));
                     
-                    // Lower to placement
+                    // Lower to placement - account for suction cup offset
                     const layer = Math.floor(pallet.boxCount / (PALLET_GRID * PALLET_GRID));
-                    const finalY = 0.06 + layer * BOX.h + BOX.h/2 + 0.015;
+                    // Final gripper target: suction tip at box top, so add 0.06 offset
+                    const finalY = 0.06 + layer * BOX.h + BOX.h + 0.065;
                     arm.targetPos.y = lerp(arm.targetPos.y, finalY, t);
                     
                     const targetAngles = solveIK(arm, arm.targetPos);
-                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.08));
+                    setArmAngles(arm, lerpAngles(arm.currentAngles, targetAngles, 0.1));
                     
                     if (arm.heldBox) {
                         const gp = getGripperWorldPos(arm);
-                        arm.heldBox.mesh.position.set(gp.x, gp.y - BOX.h/2 - 0.015, gp.z);
+                        arm.heldBox.mesh.position.set(gp.x, gp.y - 0.06 - BOX.h/2, gp.z);
                     }
                     
                     if (arm.animTime >= 1) {
