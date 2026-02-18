@@ -42,7 +42,7 @@ const PALLET_LAYERS = 7;
 const BOXES_PER_PALLET = PALLET_GRID * PALLET_GRID * PALLET_LAYERS; // 112 boxes
 
 // Layout constants
-const CONVEYOR_SPEED = 0.0006;
+const CONVEYOR_SPEED = 0.0015; // ~40 boxes/min throughput
 const CONVEYOR_HEIGHT = 0.72;
 const GANTRY_HEIGHT = 1.4;       // Height of gantry beams (mount point)
 const MOUNT_DROP = 0.08;         // Arms hang this far below gantry beam
@@ -751,11 +751,11 @@ function updateConveyor() {
     // Clean removed boxes
     boxes = boxes.filter(b => b.state !== 'removed');
     
-    // Spawn new boxes
+    // Spawn new boxes - keep conveyor well-stocked for all 4 arms
     const conveyorBoxes = boxes.filter(b => b.state === BOX_STATE.ON_CONVEYOR && !b.assignedArm);
-    if (conveyorBoxes.length < 5) {
+    if (conveyorBoxes.length < 10) {
         const minX = conveyorBoxes.length ? Math.min(...conveyorBoxes.map(b => b.mesh.position.x)) : 0;
-        if (minX > -1.3) spawnBox(-1.6);
+        if (minX > -1.5) spawnBox(-1.8);
     }
 }
 
