@@ -840,7 +840,7 @@ function updateStats() {
     if (!statsEl) return;
     
     const totalPlaced = pallets.reduce((sum, p) => sum + p.boxCount, 0);
-    const armStates = robotArms.map((a, i) => `A${i}:${a.state.slice(0,4)}`).join(' ');
+    const armStates = robotArms.map((a, i) => `A${i}:${a.state.slice(0,4)}(${a.animTime.toFixed(2)})`).join(' ');
     const boxCount = boxes.filter(b => b.state === 'conveyor').length;
     statsEl.innerHTML = `Placed: ${totalPlaced} | Conv: ${boxCount}<br>${armStates}`;
 }
@@ -950,7 +950,7 @@ function handleIdleState(arm, armIdx, time, pallet) {
 }
 
 function handleMoveToBox(arm) {
-    arm.animTime += 0.012 * simSpeed;
+    arm.animTime += 0.03 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.targetBox) {
@@ -975,7 +975,7 @@ function handleMoveToBox(arm) {
 }
 
 function handlePickBox(arm) {
-    arm.animTime += 0.015 * simSpeed;
+    arm.animTime += 0.04 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.targetBox) {
@@ -1006,7 +1006,7 @@ function handlePickBox(arm) {
 }
 
 function handleLiftBox(arm) {
-    arm.animTime += 0.012 * simSpeed;
+    arm.animTime += 0.03 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox) {
@@ -1036,7 +1036,7 @@ function handleLiftBox(arm) {
 }
 
 function handleMoveToPallet(arm, pallet) {
-    arm.animTime += 0.008 * simSpeed;
+    arm.animTime += 0.02 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox || !pallet) {
@@ -1080,7 +1080,7 @@ function handleMoveToPallet(arm, pallet) {
 }
 
 function handlePlaceBox(arm, pallet) {
-    arm.animTime += 0.015 * simSpeed;
+    arm.animTime += 0.04 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     if (!arm.heldBox || !pallet) {
@@ -1123,7 +1123,7 @@ function handlePlaceBox(arm, pallet) {
 }
 
 function handleRelease(arm, pallet) {
-    arm.animTime += 0.05 * simSpeed;
+    arm.animTime += 0.1 * simSpeed;
     
     if (arm.animTime >= 1.0 && arm.heldBox && pallet) {
         // Remove from scene and add to pallet stack
@@ -1157,7 +1157,7 @@ function handleRelease(arm, pallet) {
 }
 
 function handleRetract(arm) {
-    arm.animTime += 0.015 * simSpeed;
+    arm.animTime += 0.04 * simSpeed;
     const t = smoothstep(clamp(arm.animTime, 0, 1));
     
     // Return to idle pose
